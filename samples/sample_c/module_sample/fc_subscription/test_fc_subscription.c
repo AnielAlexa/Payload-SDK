@@ -43,9 +43,10 @@ static T_DjiReturnCode DjiTest_FcSubscriptionReceiveQuaternionCallback(const uin
 
 /* Private variables ---------------------------------------------------------*/
 static T_DjiTaskHandle s_userFcSubscriptionThread;
-static bool s_userFcSubscriptionDataShow = false;
+static bool s_userFcSubscriptionDataShow = true;  // Changed to true to show data by default
 static uint8_t s_totalSatelliteNumberUsed = 0;
 static uint32_t s_userFcSubscriptionDataCnt = 0;
+static uint8_t s_rtkFixStatus = 0;  // RTK fix status (0=unavailable, 16=single, 34=float, 50=fixed)
 
 /* Exported functions definition ---------------------------------------------*/
 T_DjiReturnCode DjiTest_FcSubscriptionStartService(void)
@@ -94,6 +95,36 @@ T_DjiReturnCode DjiTest_FcSubscriptionStartService(void)
         return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
     } else {
         USER_LOG_DEBUG("Subscribe topic gps details success.");
+    }
+
+    // Subscribe to RTK Position for high-precision positioning
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic rtk position error.");
+        return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
+    } else {
+        USER_LOG_DEBUG("Subscribe topic rtk position success.");
+    }
+
+    // Subscribe to RTK Position Info for fix status
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION_INFO, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic rtk position info error.");
+        return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
+    } else {
+        USER_LOG_DEBUG("Subscribe topic rtk position info success.");
+    }
+
+    // Subscribe to RTK Velocity for high-precision velocity
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_VELOCITY, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic rtk velocity error.");
+        return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
+    } else {
+        USER_LOG_DEBUG("Subscribe topic rtk velocity success.");
     }
 
     if (osalHandler->TaskCreate("user_subscription_task", UserFcSubscription_Task,
@@ -265,53 +296,128 @@ static void *UserFcSubscription_Task(void *arg)
     T_DjiDataTimestamp timestamp = {0};
     T_DjiFcSubscriptionGpsPosition gpsPosition = {0};
     T_DjiFcSubscriptionGpsDetails gpsDetails = {0};
+    T_DjiFcSubscriptionRtkPosition rtkPosition = {0};
+    T_DjiFcSubscriptionRtkPositionInfo rtkPositionInfo = 0;
+    T_DjiFcSubscriptionRtkVelocity rtkVelocity = {0};
     T_DjiOsalHandler *osalHandler = NULL;
+    const char *rtkStatusStr;
 
     USER_UTIL_UNUSED(arg);
     osalHandler = DjiPlatform_GetOsalHandler();
 
+    USER_LOG_INFO("========================================");
+    USER_LOG_INFO("  GPS/RTK DATA STREAMING STARTED!");
+    USER_LOG_INFO("  Data will update every 1 second");
+    USER_LOG_INFO("========================================");
+
     while (1) {
         osalHandler->TaskSleepMs(1000 / FC_SUBSCRIPTION_TASK_FREQ);
 
-        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_VELOCITY,
-                                                          (uint8_t *) &velocity,
-                                                          sizeof(T_DjiFcSubscriptionVelocity),
+        // Get RTK Position (high precision)
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION,
+                                                          (uint8_t *) &rtkPosition,
+                                                          sizeof(T_DjiFcSubscriptionRtkPosition),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of topic velocity error.");
+            USER_LOG_DEBUG("get value of topic rtk position error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("velocity: x %f y %f z %f, healthFlag %d.", velocity.data.x, velocity.data.y,
-                          velocity.data.z, velocity.health);
+        // Get RTK Position Info (fix status)
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION_INFO,
+                                                          (uint8_t *) &rtkPositionInfo,
+                                                          sizeof(T_DjiFcSubscriptionRtkPositionInfo),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_DEBUG("get value of topic rtk position info error.");
         }
 
+        // Get RTK Velocity (high precision)
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_VELOCITY,
+                                                          (uint8_t *) &rtkVelocity,
+                                                          sizeof(T_DjiFcSubscriptionRtkVelocity),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_DEBUG("get value of topic rtk velocity error.");
+        }
+
+        // Get standard GPS Position
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_GPS_POSITION,
                                                           (uint8_t *) &gpsPosition,
                                                           sizeof(T_DjiFcSubscriptionGpsPosition),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of topic gps position error.");
+            USER_LOG_DEBUG("get value of topic gps position error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("gps position: x %d y %d z %d.", gpsPosition.x, gpsPosition.y, gpsPosition.z);
-        }
-
+        // Get GPS Details
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_GPS_DETAILS,
                                                           (uint8_t *) &gpsDetails,
                                                           sizeof(T_DjiFcSubscriptionGpsDetails),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of topic gps details error.");
+            USER_LOG_DEBUG("get value of topic gps details error.");
+        }
+
+        // Get standard Velocity
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_VELOCITY,
+                                                          (uint8_t *) &velocity,
+                                                          sizeof(T_DjiFcSubscriptionVelocity),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_DEBUG("get value of topic velocity error.");
         }
 
         if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("gps total satellite number used: %d %d %d.",
+            // Display RTK fix status
+            switch (rtkPositionInfo) {
+                case DJI_FC_SUBSCRIPTION_POSITION_SOLUTION_PROPERTY_NOT_AVAILABLE:
+                    rtkStatusStr = "NOT AVAILABLE";
+                    break;
+                case DJI_FC_SUBSCRIPTION_POSITION_SOLUTION_PROPERTY_FLOAT_SOLUTION:
+                    rtkStatusStr = "FLOAT SOLUTION (accuracy ~10cm)";
+                    break;
+                case DJI_FC_SUBSCRIPTION_POSITION_SOLUTION_PROPERTY_NARROW_INT:
+                    rtkStatusStr = "FIXED SOLUTION (accuracy ~2cm) ✓✓✓";
+                    break;
+                default:
+                    rtkStatusStr = "UNKNOWN";
+                    break;
+            }
+
+            s_rtkFixStatus = rtkPositionInfo;
+            s_totalSatelliteNumberUsed = gpsDetails.totalSatelliteNumberUsed;
+
+            USER_LOG_INFO("\n========== POSITION & NAVIGATION DATA ==========");
+
+            USER_LOG_INFO("\n>>> RTK STATUS: %s", rtkStatusStr);
+
+            USER_LOG_INFO("\n=== RTK POSITION (HIGH PRECISION) ===");
+            USER_LOG_INFO("Latitude:  %.8f°", rtkPosition.latitude);
+            USER_LOG_INFO("Longitude: %.8f°", rtkPosition.longitude);
+            USER_LOG_INFO("Height MSL: %.3f m", rtkPosition.hfsl);
+
+            USER_LOG_INFO("\n=== GPS POSITION (Standard) ===");
+            USER_LOG_INFO("Latitude:  %.7f°", gpsPosition.y / 10000000.0);
+            USER_LOG_INFO("Longitude: %.7f°", gpsPosition.x / 10000000.0);
+            USER_LOG_INFO("Altitude:  %.3f m", gpsPosition.z / 1000.0);
+
+            USER_LOG_INFO("\n=== SATELLITE & ACCURACY INFO ===");
+            USER_LOG_INFO("Satellites: GPS=%d, GLONASS=%d, Total=%d",
                           gpsDetails.gpsSatelliteNumberUsed,
                           gpsDetails.glonassSatelliteNumberUsed,
                           gpsDetails.totalSatelliteNumberUsed);
-            s_totalSatelliteNumberUsed = gpsDetails.totalSatelliteNumberUsed;
+            USER_LOG_INFO("Horizontal Accuracy: %.1f mm", gpsDetails.hacc);
+            USER_LOG_INFO("Vertical Accuracy:   %.1f mm", gpsDetails.vacc);
+            USER_LOG_INFO("HDOP: %.2f (Dilution of Precision)", gpsDetails.hdop);
+            USER_LOG_INFO("PDOP: %.2f (Dilution of Precision)", gpsDetails.pdop);
+
+            USER_LOG_INFO("\n=== VELOCITY DATA ===");
+            USER_LOG_INFO("Standard Velocity: X=%.2f Y=%.2f Z=%.2f m/s",
+                          velocity.data.x, velocity.data.y, velocity.data.z);
+            USER_LOG_INFO("RTK Velocity: X=%.3f Y=%.3f Z=%.3f cm/s",
+                          rtkVelocity.x, rtkVelocity.y, rtkVelocity.z);
+
+            USER_LOG_INFO("\n================================================\n");
         }
 
     }

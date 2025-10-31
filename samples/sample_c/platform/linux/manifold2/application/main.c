@@ -235,6 +235,13 @@ int main(int argc, char **argv)
             USER_LOG_ERROR("mop channel sample init error");
         }
 #endif
+
+#ifdef CONFIG_MODULE_SAMPLE_FC_SUBSCRIPTION_ON
+        returnCode = DjiTest_FcSubscriptionStartService();
+        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("data subscription sample init error\n");
+        }
+#endif
     } else {
 #ifdef CONFIG_MODULE_SAMPLE_CAMERA_EMU_ON
         returnCode = DjiTest_CameraEmuBaseStartService();
