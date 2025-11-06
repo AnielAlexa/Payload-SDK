@@ -35,3 +35,6 @@ Logs/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
+
+samples/sample_c/platform/linux/raspberry_pi/application/install
+samples/sample_c/platform/linux/raspberry_pi/application/log

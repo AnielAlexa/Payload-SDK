@@ -78,7 +78,7 @@ bool DJICameraStreamDecoder::init()
     }
 
 #ifdef FFMPEG_INSTALLED
-    avcodec_register_all();
+    // avcodec_register_all() is deprecated and not needed in FFmpeg 4.0+
     pCodecCtx = avcodec_alloc_context3(nullptr);
     if (!pCodecCtx) {
         return false;
@@ -190,8 +190,11 @@ void DJICameraStreamDecoder::decodeBuffer(const uint8_t *buf, int bufLen)
     int processedLen = 0;
 
 #ifdef FFMPEG_INSTALLED
-    AVPacket pkt;
-    av_init_packet(&pkt);
+    AVPacket *pkt = av_packet_alloc();
+    if (!pkt) {
+        return;
+    }
+    
     pthread_mutex_lock(&decodemutex);
     while (remainingLen > 0) {
         if (!pCodecParserCtx || !pCodecCtx) {
@@ -199,20 +202,26 @@ void DJICameraStreamDecoder::decodeBuffer(const uint8_t *buf, int bufLen)
             break;
         }
         processedLen = av_parser_parse2(pCodecParserCtx, pCodecCtx,
-                                        &pkt.data, &pkt.size,
+                                        &pkt->data, &pkt->size,
                                         pData, remainingLen,
                                         AV_NOPTS_VALUE, AV_NOPTS_VALUE, AV_NOPTS_VALUE);
         remainingLen -= processedLen;
         pData += processedLen;
 
-        if (pkt.size > 0) {
-            int gotPicture = 0;
-            avcodec_decode_video2(pCodecCtx, pFrameYUV, &gotPicture, &pkt);
-
-            if (!gotPicture) {
-                ////DSTATUS_PRIVATE("Got Frame, but no picture\n");
+        if (pkt->size > 0) {
+            int ret = avcodec_send_packet(pCodecCtx, pkt);
+            if (ret < 0) {
                 continue;
-            } else {
+            }
+            
+            while (ret >= 0) {
+                ret = avcodec_receive_frame(pCodecCtx, pFrameYUV);
+                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                    break;
+                } else if (ret < 0) {
+                    break;
+                }
+                
                 int w = pFrameYUV->width;
                 int h = pFrameYUV->height;
                 ////DSTATUS_PRIVATE("Got picture! size=%dx%d\n", w, h);
@@ -224,9 +233,9 @@ void DJICameraStreamDecoder::decodeBuffer(const uint8_t *buf, int bufLen)
                 }
 
                 if (nullptr == rgbBuf) {
-                    bufSize = avpicture_get_size(AV_PIX_FMT_RGB24, w, h);
+                    bufSize = av_image_get_buffer_size(AV_PIX_FMT_RGB24, w, h, 1);
                     rgbBuf = (uint8_t *) av_malloc(bufSize);
-                    avpicture_fill((AVPicture *) pFrameRGB, rgbBuf, AV_PIX_FMT_RGB24, w, h);
+                    av_image_fill_arrays(pFrameRGB->data, pFrameRGB->linesize, rgbBuf, AV_PIX_FMT_RGB24, w, h, 1);
                 }
 
                 if (nullptr != pSwsCtx && nullptr != rgbBuf) {
@@ -241,9 +250,10 @@ void DJICameraStreamDecoder::decodeBuffer(const uint8_t *buf, int bufLen)
                 }
             }
         }
+        av_packet_unref(pkt);
     }
     pthread_mutex_unlock(&decodemutex);
-    av_free_packet(&pkt);
+    av_packet_free(&pkt);
 #endif
 }
 

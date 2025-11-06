@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
-project(dji_sdk_demo_on_rpi C)
+project(dji_sdk_demo_on_rpi CXX C)
 
 set(CMAKE_C_FLAGS "-pthread -std=gnu99")
-set(CMAKE_CXX_FLAGS "-std=c++11 -pthread")
+set(CMAKE_CXX_FLAGS "-std=gnu++20 -pthread -fpermissive -Wno-reorder")
 set(CMAKE_EXE_LINKER_FLAGS "-pthread")
 set(CMAKE_C_COMPILER "gcc")
 set(CMAKE_CXX_COMPILER "g++")
@@ -37,7 +37,11 @@ endif ()
 file(GLOB_RECURSE MODULE_COMMON_SRC ../common/*.c)
 file(GLOB_RECURSE MODULE_HAL_SRC hal/*.c)
 file(GLOB_RECURSE MODULE_APP_SRC application/*.c)
-file(GLOB_RECURSE MODULE_SAMPLE_SRC ../../../module_sample/*.c)
+# Add ROS2 C++ wrapper
+set(MODULE_ROS2_SRC application/ros2_main.cpp)
+# Changed to *.cpp for ROS2 support - exclude original .c version
+file(GLOB_RECURSE MODULE_SAMPLE_SRC ../../../module_sample/*.c ../../../module_sample/fc_subscription/*.cpp)
+list(FILTER MODULE_SAMPLE_SRC EXCLUDE REGEX "test_fc_subscription\\.c$")
 
 include_directories(../../../module_sample)
 include_directories(../common)
@@ -53,6 +57,7 @@ endif ()
 
 add_executable(${PROJECT_NAME}
         ${MODULE_APP_SRC}
+        ${MODULE_ROS2_SRC}
         ${MODULE_SAMPLE_SRC}
         ${MODULE_COMMON_SRC}
         ${MODULE_HAL_SRC})
@@ -84,6 +89,20 @@ endif (LIBUSB_FOUND)
 
 target_link_libraries(${PROJECT_NAME} m dl)
 
-add_custom_command(TARGET ${PROJECT_NAME}
-        PRE_LINK COMMAND cmake ..
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+# ROS2 dependencies
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  sensor_msgs
+  std_msgs
+  geometry_msgs
+)
+
+# Install executable
+install(TARGETS ${PROJECT_NAME}
+  DESTINATION lib/${CMAKE_PROJECT_NAME}
+)
+
+# Removed custom command that conflicts with colcon build
+# add_custom_command(TARGET ${PROJECT_NAME}
+#         PRE_LINK COMMAND cmake ..
+#         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})

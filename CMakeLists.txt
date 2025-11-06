@@ -1,4 +1,11 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.5)
+
+# ROS2 ament_cmake setup
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 if (NOT USE_SYSTEM_ARCH)
     # select use platform 'LINUX' or 'RTOS' here, reset cache and reload cmake project
@@ -6,7 +13,6 @@ if (NOT USE_SYSTEM_ARCH)
 endif ()
 
 if (USE_SYSTEM_ARCH MATCHES RTOS)
-    cmake_minimum_required(VERSION 3.15)
     set(CMAKE_C_COMPILER arm-none-eabi-gcc)
     set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
     set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
@@ -17,7 +23,7 @@ if (USE_SYSTEM_ARCH MATCHES RTOS)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 endif ()
 
-project(entry)
+project(payload_sdk)
 
 # Disable in-source builds to prevent source tree corruption.
 if (" ${CMAKE_SOURCE_DIR}" STREQUAL " ${CMAKE_BINARY_DIR}")
@@ -27,9 +33,8 @@ endif ()
 
 if (USE_SYSTEM_ARCH MATCHES LINUX)
     add_definitions(-DSYSTEM_ARCH_LINUX)
-    add_subdirectory(samples/sample_c/platform/linux/manifold2)
-    add_subdirectory(samples/sample_c++/platform/linux/manifold2)
-    
+    add_subdirectory(samples/sample_c/platform/linux/raspberry_pi)
+
     execute_process(COMMAND uname -m OUTPUT_VARIABLE DEVICE_SYSTEM_ID)
     if (DEVICE_SYSTEM_ID MATCHES x86_64)
         set(LIBRARY_PATH psdk_lib/lib/x86_64-linux-gnu-gcc)
@@ -51,4 +56,5 @@ elseif (USE_SYSTEM_ARCH MATCHES RTOS)
     add_subdirectory(samples/sample_c/platform/rtos_freertos/stm32f4_discovery/project/armgcc)
 endif ()
 
-add_custom_target(${PROJECT_NAME} ALL)
+# ROS2 ament_cmake package finalization
+ament_package()

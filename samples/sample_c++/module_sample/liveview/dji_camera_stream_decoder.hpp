@@ -33,6 +33,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
+#include <libavutil/imgutils.h>
 #endif
 }
 
@@ -71,7 +72,7 @@ private:
 
 #ifdef FFMPEG_INSTALLED
     AVCodecContext *pCodecCtx;
-    AVCodec *pCodec;
+    const AVCodec *pCodec;
     AVCodecParserContext *pCodecParserCtx;
     SwsContext *pSwsCtx;
 

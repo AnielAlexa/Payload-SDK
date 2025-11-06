@@ -29,6 +29,15 @@
 #include <utils/util_misc.h>
 #include <errno.h>
 #include <signal.h>
+
+// Forward declare ROS2 init function (implemented in C++)
+#ifdef __cplusplus
+extern "C" {
+#endif
+void ros2_init_wrapper(int argc, char **argv);
+#ifdef __cplusplus
+}
+#endif
 #include <power_management/test_power_management.h>
 #include <gimbal_emu/test_payload_gimbal_emu.h>
 #include <fc_subscription/test_fc_subscription.h>
@@ -105,8 +114,9 @@ int main(int argc, char **argv)
         .debugVersion = 0,
     };
 
-    USER_UTIL_UNUSED(argc);
-    USER_UTIL_UNUSED(argv);
+    // Initialize ROS2 via C++ wrapper
+    ros2_init_wrapper(argc, argv);
+    USER_LOG_INFO("ROS2 initialized successfully");
 
     // attention: when the program is hand up ctrl-c will generate the coredump file
     signal(SIGTERM, DjiUser_NormalExitHandler);
@@ -205,6 +215,14 @@ int main(int argc, char **argv)
         }
     #endif
 
+    // Always initialize FC Subscription for GPS/RTK data
+    #if CONFIG_MODULE_SAMPLE_FC_SUBSCRIPTION_ON
+        returnCode = DjiTest_FcSubscriptionStartService();
+        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("data subscription sample init error\n");
+        }
+    #endif
+
     if (aircraftInfoBaseInfo.mountPosition == DJI_MOUNT_POSITION_EXTENSION_PORT &&
         (aircraftInfoBaseInfo.aircraftType == DJI_AIRCRAFT_TYPE_M300_RTK ||
          aircraftInfoBaseInfo.aircraftType == DJI_AIRCRAFT_TYPE_M350_RTK)) {
@@ -224,12 +242,7 @@ int main(int argc, char **argv)
             }
         #endif
 
-        #if CONFIG_MODULE_SAMPLE_FC_SUBSCRIPTION_ON
-            returnCode = DjiTest_FcSubscriptionStartService();
-            if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-                USER_LOG_ERROR("data subscription sample init error\n");
-            }
-        #endif
+        // FC Subscription moved above to run for all mount positions
 
         #if CONFIG_MODULE_SAMPLE_GIMBAL_EMU_ON
             if (aircraftInfoBaseInfo.djiAdapterType == DJI_SDK_ADAPTER_TYPE_SKYPORT_V2 ||
